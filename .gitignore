@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Secrets — never commit
+.env
+*.env
+!.env.example
+kubeconfig*
+*.kubeconfig
+
+# Local data
+rag/chroma/data/
+*.sqlite3
+
+# Node
+node_modules/
+dist/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
