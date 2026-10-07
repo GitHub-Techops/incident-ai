@@ -73,15 +73,15 @@ async def observe_requests(request: Request, call_next):
         REQUESTS.labels(method=request.method, path=path, status=str(status)).inc()
         LATENCY.labels(method=request.method, path=path).observe(duration)
 
-        if not (path in QUIET_PATHS and status < 400):
-            level = logging.ERROR if status >= 500 else logging.INFO
-            log.log(level, "request", extra={"fields": {
-                "method": request.method,
-                "path": request.url.path,
-                "status": status,
-                "duration_ms": round(duration * 1000, 1),
-            }})
-        return response
+    if not (path in QUIET_PATHS and status < 400):
+        level = logging.ERROR if status >= 500 else logging.INFO
+        log.log(level, "request", extra={"fields": {
+            "method": request.method,
+            "path": request.url.path,
+            "status": status,
+            "duration_ms": round(duration * 1000, 1),
+        }})
+    return response
 
 
 @app.get("/")
