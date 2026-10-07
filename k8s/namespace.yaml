@@ -1,0 +1,8 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: incident-lab
+  labels:
+    app.kubernetes.io/part-of: incident-lab
+    purpose: incident-lab
