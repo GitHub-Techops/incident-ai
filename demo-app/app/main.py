@@ -12,10 +12,14 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
+from app import orders_db
+
 # --- Configuration (from environment variables, set by the ConfigMap/Deployment later) ---
 APP_NAME = "incident-demo"
 APP_VERSION = os.getenv("APP_VERSION", "v1")
 FAIL_MODE = os.getenv("FAIL_MODE", "false").lower() == "true"
+DB_HOST = "orders-db"
+DB_PORT = 5432
 
 # Paths we label metrics with. Anything else becomes "other" so random URLs
 # (scanners, typos) can't create unlimited metric series.
@@ -98,11 +102,12 @@ def health() -> dict:
 
 @app.get("/api/order")
 def create_order():
-    if FAIL_MODE:
-        time.sleep(random.uniform(0.2, 0.5))  # simulate waiting on a DB connection
+    try:
+        orders_db.connect(DB_HOST, DB_PORT, fail_mode=FAIL_MODE)
+    except ConnectionRefusedError:
         log.error("order failed", extra={"fields": {
             "error": "database connection refused",
-            "db_host": "orders-db:5432",
+            "db_host": f"{DB_HOST}:{DB_PORT}",
         }})
         return JSONResponse(status_code=500, content={"error": "internal server error"})
 
