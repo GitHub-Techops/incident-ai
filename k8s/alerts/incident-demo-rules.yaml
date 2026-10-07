@@ -1,0 +1,35 @@
+# Alert rules for incident-demo. The Prometheus Operator loads every
+# PrometheusRule in the cluster (ruleSelectorNilUsesHelmValues: false).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: incident-demo-alerts
+  namespace: incident-lab
+  labels:
+    app.kubernetes.io/name: incident-demo
+    app.kubernetes.io/part-of: incident-ai
+spec:
+  groups:
+    - name: incident-demo.rules
+      rules:
+        - alert: HighErrorRate
+          # Share of all incident-demo requests that returned 5xx over the last minute.
+          # With no 5xx at all the numerator is empty, so the expression returns
+          # nothing and the alert stays inactive.
+          expr: |
+            sum(rate(http_requests_total{namespace="incident-lab", job="incident-demo", status=~"5.."}[1m]))
+              /
+            sum(rate(http_requests_total{namespace="incident-lab", job="incident-demo"}[1m]))
+              > 0.05
+          # Must stay true for 30s before firing (filters out brief blips).
+          for: 30s
+          labels:
+            severity: critical
+            # sum() drops these labels, so set them explicitly: the incident
+            # backend uses them to know what to investigate.
+            namespace: incident-lab
+            service: incident-demo
+          annotations:
+            summary: "High HTTP 5xx error rate on incident-demo"
+            description: "{{ $value | humanizePercentage }} of incident-demo requests are failing with 5xx (threshold 5%)."
+            runbook: high-error-rate.md

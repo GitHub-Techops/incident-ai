@@ -1,0 +1,67 @@
+# kube-prometheus-stack values for the local kind cluster.
+# Install/upgrade:
+#   helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+#     -n monitoring --create-namespace -f monitoring/prometheus/values.yaml
+
+# --- Control-plane components kind does not expose to Prometheus ---
+# In kind these bind to 127.0.0.1 inside the node, so their scrape targets
+# would show as permanently DOWN and fire noisy alerts. Disable them.
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    retention: 7d
+    # By default the operator only picks up ServiceMonitors/rules carrying this
+    # Helm release's label. Setting these to false makes it pick up every
+    # ServiceMonitor/PodMonitor/PrometheusRule in the cluster, so our own
+    # manifests in incident-lab don't need Helm-specific labels.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+      limits:
+        memory: 1Gi
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+  # The webhook to the FastAPI backend (POST /webhook/alert) is added in Milestone 7.
+
+grafana:
+  # Local lab only. Not exposed outside the cluster; reach it via port-forward.
+  # Credentials come from a Secret created outside Git (scripts/create-grafana-secret.sh),
+  # instead of the chart's well-known default password.
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  sidecar:
+    dashboards:
+      enabled: true
+      # Load any ConfigMap with this label as a dashboard, from any namespace.
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+
+prometheus-node-exporter:
+  # Docker Desktop/WSL2 root filesystem is not a shared mount, which makes
+  # node-exporter fail to start when it mounts the host root.
+  hostRootFsMount:
+    enabled: false

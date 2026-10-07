@@ -1,0 +1,15 @@
+# Packs the dashboard JSON into a ConfigMap that Grafana's sidecar loads
+# automatically (it watches for the grafana_dashboard: "1" label).
+# Apply with: kubectl apply -k monitoring/grafana/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: incident-ai
+configMapGenerator:
+  - name: incident-demo-dashboard
+    files:
+      - incident-demo-dashboard.json

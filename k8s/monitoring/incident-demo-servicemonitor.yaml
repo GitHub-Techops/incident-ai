@@ -1,0 +1,21 @@
+# Tells the Prometheus Operator: scrape every Service labelled
+# app.kubernetes.io/name=incident-demo in incident-lab, on its "http" port, at /metrics.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: incident-demo
+  namespace: incident-lab
+  labels:
+    app.kubernetes.io/name: incident-demo
+    app.kubernetes.io/part-of: incident-ai
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: incident-demo
+  namespaceSelector:
+    matchNames:
+      - incident-lab
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
