@@ -4,5 +4,5 @@ kind: Namespace
 metadata:
   name: incident-lab
   labels:
-    app.kubernetes.io/part-of: incident-lab
+    app.kubernetes.io/part-of: incident-ai
     purpose: incident-lab
