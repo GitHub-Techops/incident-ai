@@ -18,8 +18,9 @@ from app import orders_db
 APP_NAME = "incident-demo"
 APP_VERSION = os.getenv("APP_VERSION", "v1")
 FAIL_MODE = os.getenv("FAIL_MODE", "false").lower() == "true"
-DB_HOST = "orders-db"
-DB_PORT = 5432
+# Orders database address, configurable per environment.
+DB_HOST = os.getenv("ORDERS_DB_HOST", "orders-db")
+DB_PORT = int(os.getenv("ORDERS_DB_PORT", "5433"))
 
 # Paths we label metrics with. Anything else becomes "other" so random URLs
 # (scanners, typos) can't create unlimited metric series.
@@ -60,7 +61,7 @@ APP_INFO = Gauge("app_info", "Application info; value is always 1", ["version"])
 APP_INFO.labels(version=APP_VERSION).set(1)
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION)
-log.info("starting", extra={"fields": {"fail_mode": FAIL_MODE}})
+log.info("starting", extra={"fields": {"fail_mode": FAIL_MODE, "db_host": f"{DB_HOST}:{DB_PORT}"}})
 
 
 @app.middleware("http")
