@@ -3,6 +3,7 @@
 from fastapi import Request
 
 from app.services.incident_store import IncidentStore
+from app.tools.git import GitTools
 from app.tools.kubernetes import KubernetesTools
 from app.tools.prometheus import PrometheusClient, PrometheusTools
 
@@ -22,6 +23,14 @@ def get_k8s_tools(request: Request) -> KubernetesTools:
             settings.allowed_namespaces, settings.log_tail_lines
         )
     return state.k8s_tools
+
+
+def get_git_tools(request: Request) -> GitTools:
+    state = request.app.state
+    if state.git_tools is None:
+        settings = state.settings
+        state.git_tools = GitTools(settings.git_source, settings.git_cache_dir, settings.git_service_paths)
+    return state.git_tools
 
 
 def get_prometheus_tools(request: Request) -> PrometheusTools:

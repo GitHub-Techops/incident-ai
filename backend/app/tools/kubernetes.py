@@ -43,6 +43,11 @@ MAX_ERROR_LINES = 20
 MAX_CONFIG_VALUE_CHARS = 2_000
 REVISION_ANNOTATION = "deployment.kubernetes.io/revision"
 CHANGE_CAUSE_ANNOTATION = "kubernetes.io/change-cause"
+# Pod template annotations written by scripts/deploy-demo.sh.
+GIT_COMMIT_ANNOTATION = "incident-ai.dev/git-commit"
+GIT_REF_ANNOTATION = "incident-ai.dev/git-ref"
+GIT_ANNOTATIONS = {GIT_COMMIT_ANNOTATION, GIT_REF_ANNOTATION}
+DEPLOYED_AT_ANNOTATION = "incident-ai.dev/deployed-at"
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)  # sort key for events without timestamps
 
 
@@ -114,6 +119,16 @@ def _diff_revisions(previous: DeploymentRevision, current: DeploymentRevision) -
         before, after = previous.env.get(name), current.env.get(name)
         if before != after:
             changes.append(f"env {name}: {before or '<unset>'} -> {after or '<unset>'}")
+    if previous.git_commit != current.git_commit:
+        changes.append(f"git commit: {(previous.git_commit or '<unknown>')[:7]} -> "
+                       f"{(current.git_commit or '<unknown>')[:7]}")
+    # Other annotation changes, e.g. kubectl.kubernetes.io/restartedAt from `rollout restart`.
+    for name in sorted(set(previous.annotations) | set(current.annotations)):
+        if name in GIT_ANNOTATIONS or name == DEPLOYED_AT_ANNOTATION:
+            continue
+        before, after = previous.annotations.get(name), current.annotations.get(name)
+        if before != after:
+            changes.append(f"annotation {name}: {before or '<unset>'} -> {after or '<unset>'}")
     return changes
 
 
@@ -307,6 +322,8 @@ class KubernetesTools:
             revision = annotations.get(REVISION_ANNOTATION)
             if revision is None:
                 continue
+            template_meta = rs.spec.template.metadata
+            template_annotations = (template_meta.annotations if template_meta else None) or {}
             revisions.append(DeploymentRevision(
                 revision=int(revision),
                 replicaset=rs.metadata.name,
@@ -316,6 +333,9 @@ class KubernetesTools:
                 images=_template_images(rs.spec.template),
                 env=_template_env(rs.spec.template),
                 change_cause=annotations.get(CHANGE_CAUSE_ANNOTATION),
+                annotations=template_annotations,
+                git_commit=template_annotations.get(GIT_COMMIT_ANNOTATION),
+                git_ref=template_annotations.get(GIT_REF_ANNOTATION),
             ))
 
         revisions.sort(key=lambda r: r.revision)

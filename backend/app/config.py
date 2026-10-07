@@ -1,11 +1,17 @@
 """Backend configuration, read once from environment variables."""
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 def _csv(value: str) -> frozenset[str]:
     return frozenset(part.strip() for part in value.split(",") if part.strip())
+
+
+def _mapping(value: str) -> dict[str, str]:
+    """"a=x,b=y" -> {"a": "x", "b": "y"}"""
+    pairs = (part.split("=", 1) for part in value.split(",") if "=" in part)
+    return {key.strip(): val.strip() for key, val in pairs}
 
 
 @dataclass(frozen=True)
@@ -23,6 +29,12 @@ class Settings:
     prometheus_timeout_seconds: float = 10.0
     # How far before the alert the metrics window starts.
     metrics_lookback_minutes: int = 10
+    # Git history: a bundle copied in by scripts/sync-git-mirror.sh (in the cluster),
+    # or a repository path for local runs, e.g. GIT_SOURCE=.. from backend/.
+    git_source: str = "/data/git/incident-ai.bundle"
+    git_cache_dir: str = "/data/git/cache.git"
+    # service name -> its directory in the repository.
+    git_service_paths: dict[str, str] = field(default_factory=lambda: {"incident-demo": "demo-app"})
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -37,4 +49,8 @@ class Settings:
                 os.getenv("PROMETHEUS_TIMEOUT_SECONDS", defaults.prometheus_timeout_seconds)),
             metrics_lookback_minutes=int(
                 os.getenv("METRICS_LOOKBACK_MINUTES", defaults.metrics_lookback_minutes)),
+            git_source=os.getenv("GIT_SOURCE", defaults.git_source),
+            git_cache_dir=os.getenv("GIT_CACHE_DIR", defaults.git_cache_dir),
+            git_service_paths=(_mapping(os.environ["GIT_SERVICE_PATHS"]) if "GIT_SERVICE_PATHS" in os.environ
+                               else defaults.git_service_paths),
         )

@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from app.models.alertmanager import AlertmanagerAlert
-from app.models.evidence import KubernetesEvidence, MetricsEvidence
+from app.models.evidence import DeploymentEvidence, KubernetesEvidence, MetricsEvidence
 from app.models.incident import (
     ApprovalStatus,
     Incident,
@@ -119,6 +119,18 @@ class IncidentStore:
         incident.timeline.append(TimelineEvent(
             at=evidence.collected_at,
             event=f"Prometheus evidence collected: {len(evidence.metrics)} metrics, "
+                  f"{len(evidence.errors)} tool errors{headline}",
+        ))
+        return incident
+
+    def attach_deployment_evidence(self, incident_id: str, evidence: DeploymentEvidence) -> Incident:
+        incident = self._incidents[incident_id]
+        incident.deployment_evidence = evidence
+        incident.updated_at = _now()
+        headline = f": {evidence.facts[0]}" if evidence.facts else ""
+        incident.timeline.append(TimelineEvent(
+            at=evidence.collected_at,
+            event=f"Deployment evidence collected, {len(evidence.commits)} commits, "
                   f"{len(evidence.errors)} tool errors{headline}",
         ))
         return incident

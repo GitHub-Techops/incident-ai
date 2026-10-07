@@ -6,13 +6,16 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps import get_k8s_tools, get_prometheus_tools, get_store
+from app.api.deps import get_git_tools, get_k8s_tools, get_prometheus_tools, get_store
 from app.logging_config import LOGGER_NAME
-from app.models.evidence import KubernetesEvidence, MetricsEvidence
+from app.models.evidence import DeploymentEvidence, KubernetesEvidence, MetricsEvidence
 from app.models.incident import ApprovalRequest, ApprovalStatus, Incident, IncidentStatus
-from app.services.evidence import collect_kubernetes_evidence, collect_metrics_evidence
+from app.services.evidence import (
+    collect_deployment_evidence, collect_kubernetes_evidence, collect_metrics_evidence,
+)
 from app.services.incident_store import IncidentStore
 from app.tools.errors import InvalidTargetError, NamespaceNotAllowedError
+from app.tools.git import GitTools
 from app.tools.kubernetes import KubernetesTools
 from app.tools.prometheus import PrometheusTools
 
@@ -98,6 +101,31 @@ async def collect_metrics(
     except InvalidTargetError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     store.attach_metrics_evidence(incident_id, evidence)
+    return evidence
+
+
+@router.post("/{incident_id}/evidence/deployment", response_model=DeploymentEvidence)
+async def collect_deployment(
+    incident_id: str,
+    store: IncidentStore = Depends(get_store),
+    k8s: KubernetesTools = Depends(get_k8s_tools),
+    git: GitTools = Depends(get_git_tools),
+) -> DeploymentEvidence:
+    """What changed immediately before the incident: the deployment revision
+    running when the alert fired, the one it replaced, and the Git commits and
+    diff between them. Attaches it to the incident and returns it."""
+    incident = _get_or_404(store, incident_id)
+    if not incident.namespace or not incident.service:
+        raise HTTPException(status_code=422, detail="Incident has no namespace/service labels to investigate")
+    try:
+        evidence = await run_in_threadpool(
+            collect_deployment_evidence, k8s, git, incident.namespace, incident.service, _incident_time(incident),
+        )
+    except NamespaceNotAllowedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except InvalidTargetError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    store.attach_deployment_evidence(incident_id, evidence)
     return evidence
 
 

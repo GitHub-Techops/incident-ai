@@ -18,6 +18,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Created on first use, see api/deps.py.
     app.state.k8s_tools = None
     app.state.prometheus_tools = None
+    app.state.git_tools = None
 
     app.include_router(alerts.router)
     app.include_router(incidents.router)
@@ -31,6 +32,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         "version": settings.app_version,
         "allowed_namespaces": sorted(settings.allowed_namespaces),
         "prometheus_url": settings.prometheus_url,
+        "git_source": settings.git_source,
     }})
     return app
 

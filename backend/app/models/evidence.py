@@ -88,6 +88,11 @@ class DeploymentRevision(BaseModel):
     images: list[str]
     env: dict[str, str] = Field(default_factory=dict)
     change_cause: str | None = None
+    # Pod template annotations, e.g. kubectl.kubernetes.io/restartedAt.
+    annotations: dict[str, str] = Field(default_factory=dict)
+    # Recorded by scripts/deploy-demo.sh; None for revisions deployed another way.
+    git_commit: str | None = None
+    git_ref: str | None = None
     # Note: changes to a referenced ConfigMap's *contents* don't create a revision,
     # so they don't show up here.
     changes_from_previous: list[str] = Field(default_factory=list)
@@ -154,6 +159,63 @@ class MetricsEvidence(BaseModel):
     window_end: datetime
     step_seconds: int
     metrics: list[MetricResult] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
+class FileChange(BaseModel):
+    path: str
+    status: str  # A added | M modified | D deleted | R renamed ...
+    additions: int | None = None  # None for binary files
+    deletions: int | None = None
+
+
+class CommitInfo(BaseModel):
+    sha: str
+    short_sha: str
+    author: str  # name only; emails stay out of LLM prompts
+    authored_at: datetime
+    committed_at: datetime
+    subject: str
+    body: str = ""
+    tags: list[str] = Field(default_factory=list)
+    files: list[FileChange] = Field(default_factory=list)  # limited to the service's path
+
+
+class GitDiff(BaseModel):
+    from_sha: str
+    to_sha: str
+    path: str  # only changes under this path, e.g. "demo-app"
+    files: list[FileChange] = Field(default_factory=list)
+    additions: int = 0
+    deletions: int = 0
+    patch: str  # unified diff, possibly truncated
+    truncated: bool = False
+
+
+class DeploymentEvidence(BaseModel):
+    """What changed before the incident: Kubernetes revisions joined with Git history.
+
+    The "active" revision is the newest one created at or before the alert;
+    "previous" is the one before it. The commits and diff are the code that
+    changed between them. Revisions created after the alert (a fix, a
+    rollback) are listed separately.
+    """
+
+    namespace: str
+    service: str
+    collected_at: datetime
+    incident_time: datetime
+    source_path: str  # where the service's code lives in the repo
+    active_revision: DeploymentRevision | None = None
+    previous_revision: DeploymentRevision | None = None
+    deployed_before_incident_seconds: float | None = None
+    revisions_after_incident: list[DeploymentRevision] = Field(default_factory=list)
+    current_commit: CommitInfo | None = None
+    previous_commit: CommitInfo | None = None
+    commits: list[CommitInfo] = Field(default_factory=list)  # previous..active, newest first
+    diff: GitDiff | None = None
+    # Plain-language facts derived only from the fields above, for the LLM and humans.
+    facts: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
 
 

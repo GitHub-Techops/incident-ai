@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.models.evidence import KubernetesEvidence, MetricsEvidence
+from app.models.evidence import DeploymentEvidence, KubernetesEvidence, MetricsEvidence
 
 
 class IncidentStatus(StrEnum):
@@ -50,6 +50,8 @@ class Incident(BaseModel):
     kubernetes_evidence: KubernetesEvidence | None = None
     # Metrics around the incident from Prometheus (Milestone 9).
     metrics_evidence: MetricsEvidence | None = None
+    # Deployment revisions + Git changes before the incident (Milestone 10).
+    deployment_evidence: DeploymentEvidence | None = None
 
 
 class WebhookResult(BaseModel):

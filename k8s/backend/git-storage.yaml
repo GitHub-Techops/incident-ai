@@ -1,0 +1,15 @@
+# Holds the git bundle copied in by scripts/sync-git-mirror.sh and the backend's
+# fetched copy of it, so Git history survives backend restarts.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: incident-backend-git
+  namespace: incident-ai
+  labels:
+    app.kubernetes.io/name: incident-backend
+    app.kubernetes.io/part-of: incident-ai
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 256Mi

@@ -41,9 +41,10 @@ def pod(name: str, ready: bool = True, restarts: int = 0, waiting: str | None = 
     )
 
 
-def template(env: list[k.V1EnvVar], image: str = f"{APP}:v1") -> k.V1PodTemplateSpec:
+def template(env: list[k.V1EnvVar], image: str = f"{APP}:v1",
+             annotations: dict[str, str] | None = None) -> k.V1PodTemplateSpec:
     return k.V1PodTemplateSpec(
-        metadata=k.V1ObjectMeta(labels=LABELS),
+        metadata=k.V1ObjectMeta(labels=LABELS, annotations=annotations),
         spec=k.V1PodSpec(containers=[k.V1Container(
             name=APP, image=image, env=env,
             env_from=[k.V1EnvFromSource(config_map_ref=k.V1ConfigMapEnvSource(name=f"{APP}-config"))],
@@ -67,15 +68,18 @@ def deployment(env: list[k.V1EnvVar], revision: str = "2") -> k.V1Deployment:
 
 
 def replicaset(name: str, revision: str, env: list[k.V1EnvVar], replicas: int,
-               owner_uid: str = DEPLOYMENT_UID) -> k.V1ReplicaSet:
+               owner_uid: str = DEPLOYMENT_UID, created: datetime = T0, image: str = f"{APP}:v1",
+               annotations: dict[str, str] | None = None) -> k.V1ReplicaSet:
+    """annotations = pod template annotations (e.g. the git commit from deploy-demo.sh)."""
     return k.V1ReplicaSet(
         metadata=k.V1ObjectMeta(
-            name=name, namespace=NS, creation_timestamp=T0,
+            name=name, namespace=NS, creation_timestamp=created,
             annotations={"deployment.kubernetes.io/revision": revision},
             owner_references=[k.V1OwnerReference(api_version="apps/v1", kind="Deployment",
                                                  name=APP, uid=owner_uid)],
         ),
-        spec=k.V1ReplicaSetSpec(selector=k.V1LabelSelector(match_labels=LABELS), template=template(env)),
+        spec=k.V1ReplicaSetSpec(selector=k.V1LabelSelector(match_labels=LABELS),
+                                template=template(env, image, annotations)),
         status=k.V1ReplicaSetStatus(replicas=replicas),
     )
 

@@ -18,15 +18,21 @@ spec:
       labels:
         app.kubernetes.io/name: incident-backend
         app.kubernetes.io/part-of: incident-ai
-        app.kubernetes.io/version: 0.3.1
+        app.kubernetes.io/version: 0.4.0
     spec:
       # Identity for the Kubernetes API: read-only (get/list) in incident-lab
       # only. See rbac.yaml.
       serviceAccountName: incident-backend
       automountServiceAccountToken: true
+      securityContext:
+        fsGroup: 10001  # makes the git volume writable for the app user
+      volumes:
+        - name: git
+          persistentVolumeClaim:
+            claimName: incident-backend-git
       containers:
         - name: incident-backend
-          image: incident-backend:0.3.1
+          image: incident-backend:0.4.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -39,8 +45,18 @@ spec:
               value: incident-lab
             - name: PROMETHEUS_URL
               value: http://monitoring-kube-prometheus-prometheus.monitoring:9090
+            # Git history, copied in by scripts/sync-git-mirror.sh.
+            - name: GIT_SOURCE
+              value: /data/git/incident-ai.bundle
+            - name: GIT_CACHE_DIR
+              value: /data/git/cache.git
+            - name: GIT_SERVICE_PATHS
+              value: incident-demo=demo-app
             - name: METRICS_LOOKBACK_MINUTES
               value: "10"
+          volumeMounts:
+            - name: git
+              mountPath: /data/git
           readinessProbe:
             httpGet:
               path: /health
