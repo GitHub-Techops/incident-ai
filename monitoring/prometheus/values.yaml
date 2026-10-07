@@ -42,7 +42,32 @@ alertmanager:
         memory: 32Mi
       limits:
         memory: 128Mi
-  # The webhook to the FastAPI backend (POST /webhook/alert) is added in Milestone 7.
+  # Routing. Helm merges maps but REPLACES lists, so `route` and `receivers`
+  # are written out in full here (the chart's inhibit_rules are kept as-is).
+  config:
+    route:
+      group_by: ["namespace", "alertname"]
+      # Shorter than the chart defaults (30s / 5m) so the lab reacts quickly.
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 4h
+      receiver: "null"
+      routes:
+        # Watchdog always fires (it proves the alert pipeline works); drop it.
+        - receiver: "null"
+          matchers:
+            - alertname = "Watchdog"
+        # Lab alerts go to the incident-ai backend (Milestone 7).
+        - receiver: incident-ai-backend
+          matchers:
+            - namespace = "incident-lab"
+    receivers:
+      - name: "null"
+      - name: incident-ai-backend
+        webhook_configs:
+          - url: http://incident-backend.incident-ai.svc/webhook/alert
+            # Also notify when the alert stops firing, so incidents get resolved.
+            send_resolved: true
 
 grafana:
   # Local lab only. Not exposed outside the cluster; reach it via port-forward.

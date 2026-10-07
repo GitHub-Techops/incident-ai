@@ -1,0 +1,42 @@
+{
+  "version": "4",
+  "groupKey": "{}/{namespace=\"incident-lab\"}:{alertname=\"HighErrorRate\", namespace=\"incident-lab\"}",
+  "truncatedAlerts": 0,
+  "status": "firing",
+  "receiver": "incident-ai-backend",
+  "groupLabels": { "alertname": "HighErrorRate", "namespace": "incident-lab" },
+  "commonLabels": {
+    "alertname": "HighErrorRate",
+    "namespace": "incident-lab",
+    "prometheus": "monitoring/monitoring-kube-prometheus-prometheus",
+    "service": "incident-demo",
+    "severity": "critical"
+  },
+  "commonAnnotations": {
+    "description": "64.83% of incident-demo requests are failing with 5xx (threshold 5%).",
+    "runbook": "high-error-rate.md",
+    "summary": "High HTTP 5xx error rate on incident-demo"
+  },
+  "externalURL": "http://monitoring-kube-prometheus-alertmanager.monitoring:9093",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "HighErrorRate",
+        "namespace": "incident-lab",
+        "prometheus": "monitoring/monitoring-kube-prometheus-prometheus",
+        "service": "incident-demo",
+        "severity": "critical"
+      },
+      "annotations": {
+        "description": "64.83% of incident-demo requests are failing with 5xx (threshold 5%).",
+        "runbook": "high-error-rate.md",
+        "summary": "High HTTP 5xx error rate on incident-demo"
+      },
+      "startsAt": "2026-10-07T08:30:00.628Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://monitoring-kube-prometheus-prometheus.monitoring:9090/graph?g0.expr=...",
+      "fingerprint": "6f0a1b2c3d4e5f60"
+    }
+  ]
+}

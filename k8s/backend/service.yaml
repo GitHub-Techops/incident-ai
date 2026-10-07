@@ -1,0 +1,17 @@
+# In-cluster address used by Alertmanager:
+#   http://incident-backend.incident-ai.svc/webhook/alert
+apiVersion: v1
+kind: Service
+metadata:
+  name: incident-backend
+  namespace: incident-ai
+  labels:
+    app.kubernetes.io/name: incident-backend
+    app.kubernetes.io/part-of: incident-ai
+spec:
+  selector:
+    app.kubernetes.io/name: incident-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

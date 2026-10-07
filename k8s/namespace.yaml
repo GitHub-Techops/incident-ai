@@ -1,4 +1,5 @@
 ---
+# The lab: workloads that get broken, investigated and remediated.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -6,3 +7,13 @@ metadata:
   labels:
     app.kubernetes.io/part-of: incident-ai
     purpose: incident-lab
+---
+# The incident-ai platform itself (backend, later the agent). Kept separate so
+# the system that remediates incident-lab never lives inside it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: incident-ai
+  labels:
+    app.kubernetes.io/part-of: incident-ai
+    purpose: platform

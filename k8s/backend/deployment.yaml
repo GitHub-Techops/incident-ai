@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: incident-backend
+  namespace: incident-ai
+  labels:
+    app.kubernetes.io/name: incident-backend
+    app.kubernetes.io/part-of: incident-ai
+spec:
+  # Exactly 1: incidents are kept in memory until PostgreSQL is added.
+  # A second replica would have its own separate incident list.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: incident-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: incident-backend
+        app.kubernetes.io/part-of: incident-ai
+        app.kubernetes.io/version: 0.1.0
+    spec:
+      # No Kubernetes API access yet. Milestone 8 adds a ServiceAccount with
+      # read-only RBAC for the investigation tools.
+      automountServiceAccountToken: false
+      containers:
+        - name: incident-backend
+          image: incident-backend:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: LOG_LEVEL
+              value: INFO
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
