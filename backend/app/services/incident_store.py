@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from app.models.alertmanager import AlertmanagerAlert
-from app.models.evidence import KubernetesEvidence
+from app.models.evidence import KubernetesEvidence, MetricsEvidence
 from app.models.incident import (
     ApprovalStatus,
     Incident,
@@ -101,6 +101,25 @@ class IncidentStore:
             at=evidence.collected_at,
             event=f"Kubernetes evidence collected: {len(evidence.pods)} pods, "
                   f"{error_lines} error log lines, {len(evidence.errors)} tool errors",
+        ))
+        return incident
+
+    def attach_metrics_evidence(self, incident_id: str, evidence: MetricsEvidence) -> Incident:
+        incident = self._incidents[incident_id]
+        incident.metrics_evidence = evidence
+        incident.updated_at = _now()
+        headline = ""
+        error_rate = next((m for m in evidence.metrics if m.name == "error_rate"), None)
+        if error_rate and error_rate.series:
+            s = error_rate.series[0].summary
+            if s.baseline_avg is not None and s.incident_avg is not None:
+                headline = f"; error rate {s.baseline_avg:.1%} before -> {s.incident_avg:.1%} during"
+                if s.recovery_avg is not None:
+                    headline += f" -> {s.recovery_avg:.1%} after"
+        incident.timeline.append(TimelineEvent(
+            at=evidence.collected_at,
+            event=f"Prometheus evidence collected: {len(evidence.metrics)} metrics, "
+                  f"{len(evidence.errors)} tool errors{headline}",
         ))
         return incident
 

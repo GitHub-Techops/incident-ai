@@ -1,4 +1,4 @@
-"""Collects all Kubernetes evidence for one incident by running the tools in order.
+"""Collects evidence for one incident by running the investigation tools.
 
 Convention: a service's Kubernetes objects carry the label
 app.kubernetes.io/name=<service>, and its Deployment is named <service>.
@@ -7,14 +7,15 @@ That's the same value as the alert's `service` label.
 
 import logging
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TypeVar
 
 from kubernetes.client.exceptions import ApiException
 
 from app.logging_config import LOGGER_NAME
-from app.models.evidence import KubernetesEvidence
+from app.models.evidence import KubernetesEvidence, MetricsEvidence
 from app.tools.kubernetes import KubernetesTools
+from app.tools.prometheus import MAX_WINDOW, PrometheusError, PrometheusTools, choose_step
 
 log = logging.getLogger(LOGGER_NAME)
 T = TypeVar("T")
@@ -69,6 +70,52 @@ def collect_kubernetes_evidence(tools: KubernetesTools, namespace: str, service:
         "error_log_lines": sum(l.error_line_count for l in evidence.logs),
         "events": len(evidence.events),
         "revisions": len(evidence.deployment_history),
+        "tool_errors": len(evidence.errors),
+    }})
+    return evidence
+
+
+def collect_metrics_evidence(
+    tools: PrometheusTools,
+    namespace: str,
+    service: str,
+    incident_time: datetime,
+    lookback: timedelta,
+    end: datetime | None = None,
+    resolved_time: datetime | None = None,
+) -> MetricsEvidence:
+    """Metrics from `lookback` before the alert until `end` (default: now),
+    summarized per phase: baseline, incident, and (if resolved) recovery."""
+    tools.check_target(namespace, service)  # raises before any query
+
+    start = incident_time - lookback
+    # Long-running incidents: look at the first MAX_WINDOW only.
+    end = min(end or datetime.now(UTC), start + MAX_WINDOW)
+    evidence = MetricsEvidence(
+        namespace=namespace, service=service, collected_at=datetime.now(UTC),
+        incident_time=incident_time, resolved_time=resolved_time, window_start=start, window_end=end,
+        step_seconds=choose_step(start, end),
+    )
+    queries = {
+        "request_rate": tools.get_request_rate,
+        "error_rate": tools.get_error_rate,
+        "latency_p95": tools.get_latency,
+        "cpu_usage": tools.get_cpu_usage,
+        "memory_usage": tools.get_memory_usage,
+    }
+    for name, get_metric in queries.items():
+        try:
+            evidence.metrics.append(get_metric(namespace, service, start, end, incident_time, resolved_time))
+        except PrometheusError as exc:
+            evidence.errors.append(f"{name}: {exc}")
+        except Exception as exc:  # noqa: BLE001 - one failed query must not lose the rest
+            evidence.errors.append(f"{name}: {type(exc).__name__}: {exc}")
+
+    log.info("metrics evidence collected", extra={"fields": {
+        "affected_namespace": namespace,
+        "affected_service": service,
+        "window_minutes": round((end - start).total_seconds() / 60, 1),
+        "metrics": len(evidence.metrics),
         "tool_errors": len(evidence.errors),
     }})
     return evidence

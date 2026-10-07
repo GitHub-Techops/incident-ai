@@ -4,6 +4,7 @@ from fastapi import Request
 
 from app.services.incident_store import IncidentStore
 from app.tools.kubernetes import KubernetesTools
+from app.tools.prometheus import PrometheusClient, PrometheusTools
 
 
 def get_store(request: Request) -> IncidentStore:
@@ -21,3 +22,12 @@ def get_k8s_tools(request: Request) -> KubernetesTools:
             settings.allowed_namespaces, settings.log_tail_lines
         )
     return state.k8s_tools
+
+
+def get_prometheus_tools(request: Request) -> PrometheusTools:
+    state = request.app.state
+    if state.prometheus_tools is None:
+        settings = state.settings
+        client = PrometheusClient(settings.prometheus_url, settings.prometheus_timeout_seconds)
+        state.prometheus_tools = PrometheusTools(client, settings.allowed_namespaces)
+    return state.prometheus_tools

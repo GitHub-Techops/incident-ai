@@ -8,10 +8,14 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.deps import get_k8s_tools
+from app.api.deps import get_k8s_tools, get_prometheus_tools
 from app.logging_config import LOGGER_NAME, JsonFormatter
 from app.main import create_app
+from app.tools.prometheus import PrometheusTools
 from tests.fake_k8s import FakeCore, make_tools, pod
+from tests.test_prometheus_tools import FakeClient as FakePrometheusClient
+from tests.test_prometheus_tools import error_ratio_values as prom_error_ratio_values
+from tests.test_prometheus_tools import matrix as prom_matrix
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -151,6 +155,25 @@ def test_kubernetes_evidence_forbidden_outside_allowed_namespace(client, firing)
     r = client.post(f"/incidents/{incident_id}/evidence/kubernetes")
     assert r.status_code == 403
     assert core.calls == []
+
+
+def test_metrics_evidence_endpoint_uses_alert_time_window(client, firing):
+    fake = FakePrometheusClient({"status=~": prom_matrix(({}, prom_error_ratio_values()))})
+    client.app.dependency_overrides[get_prometheus_tools] = lambda: PrometheusTools(
+        fake, frozenset({"incident-lab"}))
+    incident_id = client.post("/webhook/alert", json=firing).json()["created"][0]
+
+    r = client.post(f"/incidents/{incident_id}/evidence/metrics")
+    assert r.status_code == 200
+    body = r.json()
+    # Window starts 10 minutes before the alert's startsAt (fixture: 08:30:00.628Z).
+    assert body["window_start"].startswith("2026-10-07T08:20:00")
+    assert [m["name"] for m in body["metrics"]] == [
+        "request_rate", "error_rate", "latency_p95", "cpu_usage", "memory_usage"]
+
+    incident = client.get(f"/incidents/{incident_id}").json()
+    assert incident["metrics_evidence"] is not None
+    assert "Prometheus evidence collected" in incident["timeline"][-1]["event"]
 
 
 def test_chat_not_implemented_yet(client):

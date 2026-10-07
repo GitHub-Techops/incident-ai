@@ -29,6 +29,7 @@ from app.models.evidence import (
     PodLogs,
     ServiceInfo,
 )
+from app.tools.errors import NamespaceNotAllowedError
 
 # Env var / ConfigMap keys whose values are never passed on (they will end up
 # in LLM prompts). Values sourced from Secrets are never read at all.
@@ -43,10 +44,6 @@ MAX_CONFIG_VALUE_CHARS = 2_000
 REVISION_ANNOTATION = "deployment.kubernetes.io/revision"
 CHANGE_CAUSE_ANNOTATION = "kubernetes.io/change-cause"
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)  # sort key for events without timestamps
-
-
-class NamespaceNotAllowedError(PermissionError):
-    pass
 
 
 # ---------------------------------------------------------------- helpers ---

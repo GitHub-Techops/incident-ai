@@ -1,17 +1,23 @@
 """Incident read and approval endpoints."""
 
 import logging
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps import get_k8s_tools, get_store
+from app.api.deps import get_k8s_tools, get_prometheus_tools, get_store
 from app.logging_config import LOGGER_NAME
-from app.models.evidence import KubernetesEvidence
+from app.models.evidence import KubernetesEvidence, MetricsEvidence
 from app.models.incident import ApprovalRequest, ApprovalStatus, Incident, IncidentStatus
-from app.services.evidence import collect_kubernetes_evidence
+from app.services.evidence import collect_kubernetes_evidence, collect_metrics_evidence
 from app.services.incident_store import IncidentStore
-from app.tools.kubernetes import KubernetesTools, NamespaceNotAllowedError
+from app.tools.errors import InvalidTargetError, NamespaceNotAllowedError
+from app.tools.kubernetes import KubernetesTools
+from app.tools.prometheus import PrometheusTools
+
+# After an incident resolves, keep this much "recovery" in the metrics window.
+RECOVERY_WINDOW = timedelta(minutes=5)
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 log = logging.getLogger(LOGGER_NAME)
@@ -55,6 +61,43 @@ async def collect_k8s_evidence(
     except NamespaceNotAllowedError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     store.attach_kubernetes_evidence(incident_id, evidence)
+    return evidence
+
+
+def _incident_time(incident: Incident) -> datetime:
+    """When the alert started firing (Alertmanager's startsAt), else when we created the incident."""
+    starts_at = incident.alert.get("startsAt")
+    return datetime.fromisoformat(starts_at) if starts_at else incident.created_at
+
+
+@router.post("/{incident_id}/evidence/metrics", response_model=MetricsEvidence)
+async def collect_metrics(
+    incident_id: str,
+    request: Request,
+    store: IncidentStore = Depends(get_store),
+    tools: PrometheusTools = Depends(get_prometheus_tools),
+) -> MetricsEvidence:
+    """Request rate, error rate, p95 latency, CPU and memory from `lookback` minutes
+    before the alert until now (or 5 minutes after resolution), with baseline vs
+    incident summaries. Attaches it to the incident and returns it."""
+    incident = _get_or_404(store, incident_id)
+    if not incident.namespace or not incident.service:
+        raise HTTPException(status_code=422, detail="Incident has no namespace/service labels to investigate")
+
+    end = datetime.now(UTC)
+    if incident.resolved_at is not None:
+        end = min(end, incident.resolved_at + RECOVERY_WINDOW)
+    lookback = timedelta(minutes=request.app.state.settings.metrics_lookback_minutes)
+    try:
+        evidence = await run_in_threadpool(
+            collect_metrics_evidence, tools, incident.namespace, incident.service,
+            _incident_time(incident), lookback, end, incident.resolved_at,
+        )
+    except NamespaceNotAllowedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except InvalidTargetError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    store.attach_metrics_evidence(incident_id, evidence)
     return evidence
 
 

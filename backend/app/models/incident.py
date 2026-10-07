@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.models.evidence import KubernetesEvidence
+from app.models.evidence import KubernetesEvidence, MetricsEvidence
 
 
 class IncidentStatus(StrEnum):
@@ -48,6 +48,8 @@ class Incident(BaseModel):
     timeline: list[TimelineEvent] = Field(default_factory=list)
     # Latest evidence collected from the cluster (Milestone 8).
     kubernetes_evidence: KubernetesEvidence | None = None
+    # Metrics around the incident from Prometheus (Milestone 9).
+    metrics_evidence: MetricsEvidence | None = None
 
 
 class WebhookResult(BaseModel):

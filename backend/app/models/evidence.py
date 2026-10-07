@@ -108,6 +108,55 @@ class ConfigMapInfo(BaseModel):
     data: dict[str, str] = Field(default_factory=dict)
 
 
+class MetricPoint(BaseModel):
+    t: datetime
+    v: float | None  # None where Prometheus returned NaN/Inf (e.g. 0/0 with no traffic)
+
+
+class SeriesSummary(BaseModel):
+    """The numbers an SRE reads off a graph, precomputed for the LLM.
+
+    baseline: from the window start until 2 minutes before the alert (an alert
+    only fires after its condition held for a while, so those minutes are
+    already abnormal). incident: from the alert until it resolved (or until
+    now, if still open). recovery: after the alert resolved.
+    """
+
+    baseline_avg: float | None = None
+    incident_avg: float | None = None
+    recovery_avg: float | None = None
+    peak: float | None = None
+    peak_at: datetime | None = None
+    last: float | None = None
+
+
+class MetricSeries(BaseModel):
+    labels: dict[str, str] = Field(default_factory=dict)  # e.g. {"pod": "..."} or {"status": "500"}
+    summary: SeriesSummary = Field(default_factory=SeriesSummary)
+    points: list[MetricPoint] = Field(default_factory=list)
+
+
+class MetricResult(BaseModel):
+    name: str  # e.g. "error_rate"
+    description: str
+    unit: str  # ratio | requests/s | seconds | cores | bytes
+    query: str  # the exact PromQL, so every number is traceable and re-runnable
+    series: list[MetricSeries] = Field(default_factory=list)
+
+
+class MetricsEvidence(BaseModel):
+    namespace: str
+    service: str
+    collected_at: datetime
+    incident_time: datetime  # when the alert started firing
+    resolved_time: datetime | None = None  # when the alert stopped firing, if it has
+    window_start: datetime
+    window_end: datetime
+    step_seconds: int
+    metrics: list[MetricResult] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
 class KubernetesEvidence(BaseModel):
     namespace: str
     service: str

@@ -15,7 +15,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="incident-ai backend", version=settings.app_version)
     app.state.settings = settings
     app.state.store = IncidentStore()
-    app.state.k8s_tools = None  # created on first use, see api/deps.py
+    # Created on first use, see api/deps.py.
+    app.state.k8s_tools = None
+    app.state.prometheus_tools = None
 
     app.include_router(alerts.router)
     app.include_router(incidents.router)
@@ -28,6 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     log.info("starting", extra={"fields": {
         "version": settings.app_version,
         "allowed_namespaces": sorted(settings.allowed_namespaces),
+        "prometheus_url": settings.prometheus_url,
     }})
     return app
 
