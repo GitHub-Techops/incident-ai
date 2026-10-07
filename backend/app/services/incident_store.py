@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from app.models.alertmanager import AlertmanagerAlert
+from app.models.evidence import KubernetesEvidence
 from app.models.incident import (
     ApprovalStatus,
     Incident,
@@ -90,6 +91,18 @@ class IncidentStore:
 
     def get(self, incident_id: str) -> Incident | None:
         return self._incidents.get(incident_id)
+
+    def attach_kubernetes_evidence(self, incident_id: str, evidence: KubernetesEvidence) -> Incident:
+        incident = self._incidents[incident_id]
+        incident.kubernetes_evidence = evidence
+        incident.updated_at = _now()
+        error_lines = sum(l.error_line_count for l in evidence.logs)
+        incident.timeline.append(TimelineEvent(
+            at=evidence.collected_at,
+            event=f"Kubernetes evidence collected: {len(evidence.pods)} pods, "
+                  f"{error_lines} error log lines, {len(evidence.errors)} tool errors",
+        ))
+        return incident
 
     def decide_approval(
         self, incident_id: str, approved: bool, decided_by: str, comment: str | None

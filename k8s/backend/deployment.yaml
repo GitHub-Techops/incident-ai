@@ -18,14 +18,15 @@ spec:
       labels:
         app.kubernetes.io/name: incident-backend
         app.kubernetes.io/part-of: incident-ai
-        app.kubernetes.io/version: 0.1.0
+        app.kubernetes.io/version: 0.2.0
     spec:
-      # No Kubernetes API access yet. Milestone 8 adds a ServiceAccount with
-      # read-only RBAC for the investigation tools.
-      automountServiceAccountToken: false
+      # Identity for the Kubernetes API: read-only (get/list) in incident-lab
+      # only. See rbac.yaml.
+      serviceAccountName: incident-backend
+      automountServiceAccountToken: true
       containers:
         - name: incident-backend
-          image: incident-backend:0.1.0
+          image: incident-backend:0.2.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -33,6 +34,9 @@ spec:
           env:
             - name: LOG_LEVEL
               value: INFO
+            # App-level allow-list; must stay in line with the RBAC in rbac.yaml.
+            - name: ALLOWED_NAMESPACES
+              value: incident-lab
           readinessProbe:
             httpGet:
               path: /health

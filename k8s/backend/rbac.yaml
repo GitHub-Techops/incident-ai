@@ -1,0 +1,51 @@
+# Identity and permissions for the incident backend.
+#
+# The backend may only READ (get/list) a fixed set of resource types, and only
+# in incident-lab. No create/update/patch/delete, no exec, no Secrets, and no
+# access to any other namespace. Remediation (Milestone 17) will get its own,
+# separate, narrowly scoped permissions.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: incident-backend
+  namespace: incident-ai
+  labels:
+    app.kubernetes.io/name: incident-backend
+    app.kubernetes.io/part-of: incident-ai
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: incident-investigator
+  # A Role (not ClusterRole) only grants access inside its own namespace.
+  namespace: incident-lab
+  labels:
+    app.kubernetes.io/part-of: incident-ai
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "services", "configmaps"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list"]
+---
+# Grants the Role in incident-lab to the ServiceAccount that lives in incident-ai.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: incident-backend-investigator
+  namespace: incident-lab
+  labels:
+    app.kubernetes.io/part-of: incident-ai
+subjects:
+  - kind: ServiceAccount
+    name: incident-backend
+    namespace: incident-ai
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: incident-investigator

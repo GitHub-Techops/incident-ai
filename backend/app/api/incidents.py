@@ -3,11 +3,15 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from starlette.concurrency import run_in_threadpool
 
-from app.api.deps import get_store
+from app.api.deps import get_k8s_tools, get_store
 from app.logging_config import LOGGER_NAME
+from app.models.evidence import KubernetesEvidence
 from app.models.incident import ApprovalRequest, ApprovalStatus, Incident, IncidentStatus
+from app.services.evidence import collect_kubernetes_evidence
 from app.services.incident_store import IncidentStore
+from app.tools.kubernetes import KubernetesTools, NamespaceNotAllowedError
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 log = logging.getLogger(LOGGER_NAME)
@@ -30,6 +34,28 @@ async def list_incidents(
 @router.get("/{incident_id}", response_model=Incident)
 async def get_incident(incident_id: str, store: IncidentStore = Depends(get_store)) -> Incident:
     return _get_or_404(store, incident_id)
+
+
+@router.post("/{incident_id}/evidence/kubernetes", response_model=KubernetesEvidence)
+async def collect_k8s_evidence(
+    incident_id: str,
+    store: IncidentStore = Depends(get_store),
+    tools: KubernetesTools = Depends(get_k8s_tools),
+) -> KubernetesEvidence:
+    """Collect pods, logs, events, deployment + history, services and config for
+    the incident's service, attach it to the incident, and return it."""
+    incident = _get_or_404(store, incident_id)
+    if not incident.namespace or not incident.service:
+        raise HTTPException(status_code=422, detail="Incident has no namespace/service labels to investigate")
+    try:
+        # The Kubernetes client is blocking; run it off the event loop.
+        evidence = await run_in_threadpool(
+            collect_kubernetes_evidence, tools, incident.namespace, incident.service
+        )
+    except NamespaceNotAllowedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    store.attach_kubernetes_evidence(incident_id, evidence)
+    return evidence
 
 
 async def _decide(incident_id: str, approved: bool, body: ApprovalRequest, store: IncidentStore) -> Incident:

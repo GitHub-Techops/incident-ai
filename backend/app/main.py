@@ -1,22 +1,21 @@
 """incident-ai backend: receives alerts and manages incidents."""
 
-import os
-
 from fastapi import FastAPI
 
 from app.api import alerts, chat, incidents
+from app.config import Settings
 from app.logging_config import setup_logging
 from app.services.incident_store import IncidentStore
 
-APP_VERSION = os.getenv("APP_VERSION", "dev")
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or Settings.from_env()
+    log = setup_logging(settings.log_level)
 
-def create_app() -> FastAPI:
-    log = setup_logging(LOG_LEVEL)
-
-    app = FastAPI(title="incident-ai backend", version=APP_VERSION)
+    app = FastAPI(title="incident-ai backend", version=settings.app_version)
+    app.state.settings = settings
     app.state.store = IncidentStore()
+    app.state.k8s_tools = None  # created on first use, see api/deps.py
 
     app.include_router(alerts.router)
     app.include_router(incidents.router)
@@ -24,9 +23,12 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["health"])
     async def health() -> dict:
-        return {"status": "healthy", "version": APP_VERSION}
+        return {"status": "healthy", "version": settings.app_version}
 
-    log.info("starting", extra={"fields": {"version": APP_VERSION}})
+    log.info("starting", extra={"fields": {
+        "version": settings.app_version,
+        "allowed_namespaces": sorted(settings.allowed_namespaces),
+    }})
     return app
 
 

@@ -8,8 +8,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.deps import get_k8s_tools
 from app.logging_config import LOGGER_NAME, JsonFormatter
 from app.main import create_app
+from tests.fake_k8s import FakeCore, make_tools, pod
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -119,6 +121,36 @@ def test_webhook_log_line_keeps_backend_service_name(client, firing):
     entry = json.loads(JsonFormatter().format(record))
     assert entry["service"] == "incident-backend"
     assert entry["affected_service"] == "incident-demo"
+
+
+def _with_fake_k8s(client: TestClient, tools) -> TestClient:
+    client.app.dependency_overrides[get_k8s_tools] = lambda: tools
+    return client
+
+
+def test_kubernetes_evidence_endpoint_attaches_evidence(client, firing):
+    core = FakeCore(pods=[pod("incident-demo-p1")], logs='{"level": "ERROR", "msg": "order failed"}')
+    _with_fake_k8s(client, make_tools(core=core))
+    incident_id = client.post("/webhook/alert", json=firing).json()["created"][0]
+
+    r = client.post(f"/incidents/{incident_id}/evidence/kubernetes")
+    assert r.status_code == 200
+    assert r.json()["pods"][0]["name"] == "incident-demo-p1"
+
+    incident = client.get(f"/incidents/{incident_id}").json()
+    assert incident["kubernetes_evidence"]["logs"][0]["error_line_count"] == 1
+    assert "Kubernetes evidence collected" in incident["timeline"][-1]["event"]
+
+
+def test_kubernetes_evidence_forbidden_outside_allowed_namespace(client, firing):
+    core = FakeCore()
+    _with_fake_k8s(client, make_tools(core=core))
+    firing["alerts"][0]["labels"]["namespace"] = "kube-system"
+    incident_id = client.post("/webhook/alert", json=firing).json()["created"][0]
+
+    r = client.post(f"/incidents/{incident_id}/evidence/kubernetes")
+    assert r.status_code == 403
+    assert core.calls == []
 
 
 def test_chat_not_implemented_yet(client):

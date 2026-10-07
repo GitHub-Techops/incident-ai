@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.models.evidence import KubernetesEvidence
+
 
 class IncidentStatus(StrEnum):
     OPEN = "open"
@@ -44,6 +46,8 @@ class Incident(BaseModel):
     # Latest alert exactly as Alertmanager sent it: the raw evidence.
     alert: dict[str, Any]
     timeline: list[TimelineEvent] = Field(default_factory=list)
+    # Latest evidence collected from the cluster (Milestone 8).
+    kubernetes_evidence: KubernetesEvidence | None = None
 
 
 class WebhookResult(BaseModel):
