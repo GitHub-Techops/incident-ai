@@ -1,0 +1,45 @@
+# Simulated users: calls /api/order about twice a second.
+# Without steady traffic there is no request *rate*, so Grafana stays empty
+# and the HighErrorRate alert has nothing to measure.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-generator
+  namespace: incident-lab
+  labels:
+    app.kubernetes.io/name: traffic-generator
+    app.kubernetes.io/part-of: incident-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traffic-generator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: traffic-generator
+        app.kubernetes.io/part-of: incident-ai
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:8.11.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                curl -s -o /dev/null http://incident-demo.incident-lab.svc/api/order
+                sleep 0.5
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+          securityContext:
+            # The image declares its user by name (curl_user); runAsNonRoot
+            # needs a numeric UID to verify, so set it explicitly.
+            runAsUser: 100
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false

@@ -106,8 +106,8 @@ def create_order():
         }})
         return JSONResponse(status_code=500, content={"error": "internal server error"})
 
-        time.sleep(random.uniform(0.01, 0.05))  # simulate normal work
-        return {"order_id": uuid.uuid4().hex[:8], "status": "created", "version": APP_VERSION}
+    time.sleep(random.uniform(0.01, 0.05))  # simulate normal work
+    return {"order_id": uuid.uuid4().hex[:8], "status": "created", "version": APP_VERSION}
 
 
 @app.get("/metrics")
