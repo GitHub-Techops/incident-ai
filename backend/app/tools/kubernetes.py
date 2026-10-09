@@ -132,6 +132,21 @@ def _diff_revisions(previous: DeploymentRevision, current: DeploymentRevision) -
     return changes
 
 
+def _inherited_change_cause(previous: DeploymentRevision, current: DeploymentRevision) -> bool:
+    """True if current's change-cause was copied from an earlier deploy, not written for it.
+
+    Kubernetes copies the Deployment's change-cause annotation onto every new
+    ReplicaSet, so a later `kubectl set env` revision still says "deploy-demo.sh v1".
+    deploy-demo.sh stamps each release with a new deployed-at; a revision that kept
+    the previous one's stamp wasn't made by deploy-demo.sh.
+    """
+    stamp = previous.annotations.get(DEPLOYED_AT_ANNOTATION)
+    return (current.change_cause is not None
+            and current.change_cause == previous.change_cause
+            and stamp is not None
+            and current.annotations.get(DEPLOYED_AT_ANNOTATION) == stamp)
+
+
 def _container_info(status: client.V1ContainerStatus) -> ContainerInfo:
     state, reason = "unknown", None
     if status.state is not None:
@@ -339,8 +354,14 @@ class KubernetesTools:
             ))
 
         revisions.sort(key=lambda r: r.revision)
-        for previous, current in zip(revisions, revisions[1:]):
+        pairs = list(zip(revisions, revisions[1:]))
+        # Decide on the original values first: several non-release revisions in a
+        # row each inherit the same change-cause.
+        inherited = [current for previous, current in pairs if _inherited_change_cause(previous, current)]
+        for previous, current in pairs:
             current.changes_from_previous = _diff_revisions(previous, current)
+        for current in inherited:
+            current.change_cause = None
         return list(reversed(revisions))
 
     def get_services(self, namespace: str, label_selector: str | None = None) -> list[ServiceInfo]:

@@ -123,6 +123,29 @@ def test_deployment_history_shows_what_changed_newest_first():
     assert history[1].changes_from_previous == []
 
 
+def test_change_cause_copied_from_an_earlier_release_is_dropped():
+    release = {"incident-ai.dev/git-commit": "a" * 40, "incident-ai.dev/deployed-at": "2026-10-07T11:00:00Z"}
+    cause = "deploy-demo.sh v1 (commit aaaaaaa)"
+    apps = FakeApps(
+        deployment=deployment(FAIL_ENV, revision="4"),
+        replicasets=[
+            replicaset(f"{APP}-rs1", "1", env=[], replicas=0, annotations=release, change_cause=cause),
+            # `kubectl set env`, then `rollout restart` after the release: same template
+            # stamp, inherited change-cause, two revisions in a row.
+            replicaset(f"{APP}-rs2", "2", env=FAIL_ENV, replicas=0, annotations=release, change_cause=cause),
+            replicaset(f"{APP}-rs3", "3", env=FAIL_ENV, replicas=0, change_cause=cause,
+                       annotations={**release, "kubectl.kubernetes.io/restartedAt": "2026-10-07T11:30:00Z"}),
+            # A real redeploy of the same version: new stamp, so its change-cause is its own.
+            replicaset(f"{APP}-rs4", "4", env=FAIL_ENV, replicas=2, change_cause=cause,
+                       annotations={**release, "incident-ai.dev/deployed-at": "2026-10-07T12:00:00Z"}),
+        ],
+    )
+    history = make_tools(apps=apps).get_deployment_history(NS, APP)
+
+    assert [(r.revision, r.change_cause) for r in history] == [(4, cause), (3, None), (2, None), (1, cause)]
+    assert history[2].changes_from_previous == ["env FAIL_MODE: <unset> -> true"]
+
+
 # --- events / services / config ------------------------------------------------
 
 def test_get_events_filters_by_prefix_and_sorts_newest_first():

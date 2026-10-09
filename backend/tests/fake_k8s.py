@@ -69,12 +69,15 @@ def deployment(env: list[k.V1EnvVar], revision: str = "2") -> k.V1Deployment:
 
 def replicaset(name: str, revision: str, env: list[k.V1EnvVar], replicas: int,
                owner_uid: str = DEPLOYMENT_UID, created: datetime = T0, image: str = f"{APP}:v1",
-               annotations: dict[str, str] | None = None) -> k.V1ReplicaSet:
+               annotations: dict[str, str] | None = None, change_cause: str | None = None) -> k.V1ReplicaSet:
     """annotations = pod template annotations (e.g. the git commit from deploy-demo.sh)."""
+    rs_annotations = {"deployment.kubernetes.io/revision": revision}
+    if change_cause:
+        rs_annotations["kubernetes.io/change-cause"] = change_cause
     return k.V1ReplicaSet(
         metadata=k.V1ObjectMeta(
             name=name, namespace=NS, creation_timestamp=created,
-            annotations={"deployment.kubernetes.io/revision": revision},
+            annotations=rs_annotations,
             owner_references=[k.V1OwnerReference(api_version="apps/v1", kind="Deployment",
                                                  name=APP, uid=owner_uid)],
         ),

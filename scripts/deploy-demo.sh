@@ -56,4 +56,8 @@ kubectl patch deployment incident-demo -n "$NS" --type=strategic -p "$(cat <<JSO
 JSON
 )"
 kubectl rollout status deployment/incident-demo -n "$NS" --timeout=120s
+# The new ReplicaSet has its own copy of change-cause now. Remove it from the
+# Deployment, or Kubernetes copies it onto every later revision (kubectl set env,
+# rollout restart, ...) and labels those as this release.
+kubectl annotate deployment incident-demo -n "$NS" kubernetes.io/change-cause- >/dev/null
 kubectl rollout history deployment/incident-demo -n "$NS" | tail -n 3
