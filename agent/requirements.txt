@@ -1,5 +1,6 @@
 pydantic==2.13.5
 langchain-core==1.6.10
 langchain-ollama==1.1.0
+langgraph==1.2.15
 # The knowledge-base search from Milestone 12 (run pip from agent/)
 -e ../rag
