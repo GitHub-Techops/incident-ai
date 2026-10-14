@@ -1,0 +1,14 @@
+# Makes the knowledge-base code installable, so the agent can use it:
+#   cd agent && .venv/bin/pip install -e ../rag
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "incident-ai-rag"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["pyyaml==6.0.3", "redis==8.1.0"]
+
+[tool.setuptools.packages.find]
+include = ["ingestion*", "retrieval*", "embeddings*"]

@@ -21,24 +21,14 @@ import time
 import urllib.request
 from pathlib import Path
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
+
+from schemas import RootCauseAnalysis
 
 FIXTURE = Path(__file__).parent / "fixtures" / "v2-incident-evidence.json"
 
-
-class RootCauseAnalysis(BaseModel):
-    """First version of the structured report (Milestone 16 extends it)."""
-
-    summary: str = Field(description="One or two sentences: what is broken and the impact")
-    facts: list[str] = Field(description="Observations taken directly from the evidence, each citing its source")
-    inferences: list[str] = Field(description="Conclusions drawn from the facts, not directly observed")
-    root_cause: str = Field(description="The most likely root cause, as specific as the evidence allows")
-    confidence: float = Field(ge=0, le=1, description="0-1; how strongly the evidence supports the root cause")
-    recommended_actions: list[str]
-    rollback_recommended: bool
-    rollback_reason: str
-
-
+# The Milestone 13 baseline prompt, kept as-is so `rca` stays comparable with
+# the first measurements. The agent's improved prompt is in prompts/rca.py.
 SYSTEM_PROMPT = """You are an experienced site reliability engineer investigating a production incident.
 Use only the evidence provided. Never invent facts, values, files or commands that are not in it.
 Keep facts (directly observed in the evidence) separate from inferences (your conclusions).
