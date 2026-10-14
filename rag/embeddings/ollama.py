@@ -6,8 +6,10 @@ question, find the stored documents whose numbers are closest.
 
 nomic-embed-text was trained with task prefixes and works best with them:
 "search_document: " for what we store, "search_query: " for questions.
-Documents are embedded whole (no chunking), which works because this model
-reads up to 8192 tokens; our longest document is about 1,500.
+Documents are embedded whole (no chunking). Ollama runs this model with a
+2048-token context; our documents measure 527-898 tokens (2026-10-14). A
+document that grows past the limit makes indexing fail (truncate=False below),
+which is the signal to split it or bring chunking back.
 """
 
 import json
@@ -17,7 +19,7 @@ from collections.abc import Callable
 
 DOCUMENT_PREFIX = "search_document: "
 QUERY_PREFIX = "search_query: "
-CONTEXT_TOKENS = 8192
+CONTEXT_TOKENS = 2048  # nomic-embed-text's context length in Ollama (nomic-bert.context_length)
 
 PostFn = Callable[[str, dict, float], dict]
 

@@ -1,0 +1,37 @@
+{
+  "_source": "Captured from incident INC-20261007-bd57ae (demo-app v2 drill, 2026-10-07) while it was open: backend evidence endpoints plus `git diff 8b8c46c cd1ffef -- demo-app`. Post-fix data excluded.",
+  "alert": {
+    "alertname": "HighErrorRate",
+    "severity": "critical",
+    "service": "incident-demo",
+    "namespace": "incident-lab",
+    "summary": "High HTTP 5xx error rate on incident-demo",
+    "rule": "5xx share of incident-demo requests > 5% for 30s",
+    "startsAt": "2026-10-07T11:04:45.628Z"
+  },
+  "kubernetes": {
+    "pods": 2,
+    "rollout": "deployment incident-demo successfully rolled out (pods Ready)",
+    "error_log_lines": 188,
+    "sample_error_log": "{\"ts\": \"2026-10-07T11:04:46+0000\", \"level\": \"ERROR\", \"service\": \"incident-demo\", \"version\": \"v2\", \"msg\": \"order failed\", \"error\": \"database connection refused\", \"db_host\": \"orders-db:5433\"}"
+  },
+  "metrics": {
+    "error_rate": {
+      "baseline_avg": 0.0,
+      "incident_avg": 0.506154,
+      "peak": 0.672658,
+      "peak_at": "2026-10-07T11:05:30.628Z",
+      "unit": "ratio of all requests"
+    }
+  },
+  "deployment": {
+    "facts": [
+      "revision 25 (incident-demo:v2, commit cd1ffef) was deployed 1m17s before the alert, replacing revision 24 (incident-demo:v1, commit 8b8c46c).",
+      "Kubernetes changes in revision 25: image: incident-demo:v1 -> incident-demo:v2; git commit: 8b8c46c -> cd1ffef.",
+      "Code change from 8b8c46c to cd1ffef in demo-app/: 2 commit(s), 2 file(s) changed, +28 -4.",
+      "Commit cd1ffef by Simranjeet Singh at 2026-10-07T10:55:09+00:00: demo-app: make the orders DB host and port configurable (files: demo-app/app/main.py)",
+      "Commit 95729f4 by Simranjeet Singh at 2026-10-07T10:54:53+00:00: demo-app: move the orders DB connection into its own module (files: demo-app/app/main.py, demo-app/app/orders_db.py)"
+    ],
+    "diff": "diff --git a/demo-app/app/main.py b/demo-app/app/main.py\nindex 3bc4845..496f362 100644\n--- a/demo-app/app/main.py\n+++ b/demo-app/app/main.py\n@@ -12,10 +12,15 @@ from fastapi import FastAPI, Request, Response\n from fastapi.responses import JSONResponse\n from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest\n \n+from app import orders_db\n+\n # --- Configuration (from environment variables, set by the ConfigMap/Deployment later) ---\n APP_NAME = \"incident-demo\"\n APP_VERSION = os.getenv(\"APP_VERSION\", \"v1\")\n FAIL_MODE = os.getenv(\"FAIL_MODE\", \"false\").lower() == \"true\"\n+# Orders database address, configurable per environment.\n+DB_HOST = os.getenv(\"ORDERS_DB_HOST\", \"orders-db\")\n+DB_PORT = int(os.getenv(\"ORDERS_DB_PORT\", \"5433\"))\n \n # Paths we label metrics with. Anything else becomes \"other\" so random URLs\n # (scanners, typos) can't create unlimited metric series.\n@@ -56,7 +61,7 @@ APP_INFO = Gauge(\"app_info\", \"Application info; value is always 1\", [\"version\"])\n APP_INFO.labels(version=APP_VERSION).set(1)\n \n app = FastAPI(title=APP_NAME, version=APP_VERSION)\n-log.info(\"starting\", extra={\"fields\": {\"fail_mode\": FAIL_MODE}})\n+log.info(\"starting\", extra={\"fields\": {\"fail_mode\": FAIL_MODE, \"db_host\": f\"{DB_HOST}:{DB_PORT}\"}})\n \n \n @app.middleware(\"http\")\n@@ -98,11 +103,12 @@ def health() -> dict:\n \n @app.get(\"/api/order\")\n def create_order():\n-    if FAIL_MODE:\n-        time.sleep(random.uniform(0.2, 0.5))  # simulate waiting on a DB connection\n+    try:\n+        orders_db.connect(DB_HOST, DB_PORT, fail_mode=FAIL_MODE)\n+    except ConnectionRefusedError:\n         log.error(\"order failed\", extra={\"fields\": {\n             \"error\": \"database connection refused\",\n-            \"db_host\": \"orders-db:5432\",\n+            \"db_host\": f\"{DB_HOST}:{DB_PORT}\",\n         }})\n         return JSONResponse(status_code=500, content={\"error\": \"internal server error\"})\n \ndiff --git a/demo-app/app/orders_db.py b/demo-app/app/orders_db.py\nnew file mode 100644\nindex 0000000..261966a\n--- /dev/null\n+++ b/demo-app/app/orders_db.py\n@@ -0,0 +1,18 @@\n+\"\"\"Stand-in for the orders database.\n+\n+The lab has no real database. connect() behaves like a client connecting to\n+one that listens on orders-db:5432: any other address is refused, and\n+FAIL_MODE makes the database unreachable.\n+\"\"\"\n+\n+import random\n+import time\n+\n+LISTEN_ADDRESS = (\"orders-db\", 5432)\n+\n+\n+def connect(host: str, port: int, fail_mode: bool) -> None:\n+    \"\"\"Raise ConnectionRefusedError if the database can't be reached.\"\"\"\n+    if fail_mode or (host, port) != LISTEN_ADDRESS:\n+        time.sleep(random.uniform(0.2, 0.5))  # waiting for the connection attempt to fail\n+        raise ConnectionRefusedError(f\"connection refused: {host}:{port}\")\n"
+  }
+}

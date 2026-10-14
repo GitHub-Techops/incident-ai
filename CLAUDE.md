@@ -663,7 +663,9 @@ Redis
 ```
 
 Decision (2026-10-14, by the user): no chunking for now. Each document is
-embedded whole with Ollama `nomic-embed-text` (8192-token context). The
+embedded whole with Ollama `nomic-embed-text` (2048-token context in Ollama;
+documents are 527-898 tokens, and indexing fails rather than truncates if one
+grows past the limit). The
 chunking code in `rag/ingestion/chunking.py` stays available but unused.
 
 Use local embeddings.
