@@ -22,11 +22,11 @@ from pathlib import Path
 
 from langchain_core.documents import Document
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.retrievers import BaseRetriever
 
 from llm import make_chat_model
-from prompts.rca import RCA_PROMPT
+from prompts.rca import CORRECTION_PROMPT, RCA_PROMPT
 from schemas import RootCauseAnalysis
 from settings import Settings
 from tools.backend import BackendClient
@@ -40,11 +40,19 @@ class RCAError(RuntimeError):
     pass
 
 
-def analyze(llm: BaseChatModel, alert: str, evidence: str, knowledge: str,
-            max_attempts: int = 2) -> tuple[RootCauseAnalysis, int]:
-    """Returns the validated analysis and how many attempts it took."""
+def analyze(llm: BaseChatModel, alert: str, evidence: str, knowledge: str, max_attempts: int = 2,
+            previous: RootCauseAnalysis | None = None, problems: list[str] | None = None,
+            ) -> tuple[RootCauseAnalysis, int]:
+    """Returns the validated analysis and how many attempts it took.
+
+    With `previous` and `problems`, it is a correction round: the model sees its
+    earlier answer and the statements the verifier could not find in the evidence.
+    """
     structured = llm.with_structured_output(RootCauseAnalysis, include_raw=True)
     messages: list[BaseMessage] = RCA_PROMPT.format_messages(alert=alert, evidence=evidence, knowledge=knowledge)
+    if previous is not None and problems:
+        messages += [AIMessage(previous.model_dump_json()),
+                     HumanMessage(CORRECTION_PROMPT.format(problems="\n".join(f"- {p}" for p in problems)))]
     for attempt in range(1, max_attempts + 1):
         out = structured.invoke(messages)
         if out["parsing_error"] is None and out["parsed"] is not None:

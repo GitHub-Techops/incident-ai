@@ -9,18 +9,21 @@ Redis and Ollama (OLLAMA_URL).
 """
 
 import argparse
-import json
 import sys
 import uuid
+from pathlib import Path
 
 from langgraph.types import Command
 
 from graph.incident_graph import build_graph
 from llm import make_chat_model
 from nodes.incident_nodes import Deps
+from report.schema import IncidentReport
 from settings import Settings
 from tools.backend import BackendClient
 from tools.knowledge import make_retriever
+
+REPORTS = Path(__file__).parent / "reports"  # local output, not committed
 
 
 def run_until_pause(graph, payload, config) -> dict | None:
@@ -40,6 +43,8 @@ def ask_human(request: dict, decision: str | None, decided_by: str) -> dict:
     p = request["proposal"]
     print("\n=== APPROVAL REQUIRED ==========================================")
     print(f"Root cause ({request['confidence']:.2f}): {request['root_cause']}")
+    print(f"Facts:     {request['facts_verified']} verified against the evidence"
+          + (f"; confidence {request['confidence_note']}" if request.get("confidence_note") else ""))
     print(f"Proposal:  {p['summary']}")
     print(f"Reason:    {p['reason']}")
     print("Evidence:  " + "\n           ".join(p["evidence"]))
@@ -62,7 +67,7 @@ def main() -> None:
 
     settings = Settings.from_env()
     deps = Deps(backend=BackendClient(settings.backend_url), retriever=make_retriever(settings),
-                llm=make_chat_model(settings, reasoning=args.reasoning))
+                llm=make_chat_model(settings, reasoning=args.reasoning), model_name=settings.llm_model)
     graph = build_graph(deps)
     if args.graph:
         print(graph.get_graph().draw_mermaid())
@@ -82,16 +87,44 @@ def main() -> None:
     if state.get("stop_reason"):
         print(f"\nstopped: {state['stop_reason']}")
         return
-    print("\n=== RESULT =====================================================")
-    print(f"root cause:   {state['root_cause']}")
-    print(f"confidence:   {state['confidence']:.2f}")
-    print(f"rollback:     {state['rollback_assessment']['note']}")
-    for b in state["rollback_assessment"]["blockers"]:
-        print(f"              blocker: {b}")
-    print(f"approval:     {state.get('approval_status')}")
-    if state.get("remediation_result"):
-        print(f"remediation:  {json.dumps(state['remediation_result'], indent=2)}")
-    print(f"knowledge:    {', '.join(d['source'] for d in state.get('rag_evidence', []))}")
+    report = IncidentReport.model_validate(state["report"])
+    print_report(report)
+    REPORTS.mkdir(exist_ok=True)
+    path = REPORTS / f"{report.incident_id}.json"
+    path.write_text(report.model_dump_json(indent=2) + "\n")
+    print(f"\nreport saved to {path}")
+
+
+def print_report(r: IncidentReport) -> None:
+    v = r.verification
+    print(f"\n=== INCIDENT REPORT {r.incident_id} " + "=" * 30)
+    print(f"{r.severity} | {r.namespace}/{r.service} | status {r.status} | model {r.model}")
+    print(f"\nSummary:    {r.summary}")
+    print(f"Root cause: {r.root_cause}")
+    print(f"Confidence: {r.confidence:.2f}" + (f"  ({v.confidence_note})" if v.confidence_note else ""))
+    print(f"\nFACTS ({v.facts_verified}/{v.facts_total} verified against the evidence"
+          + (", after one correction round" if v.corrected else "") + "):")
+    for e in r.evidence:
+        if e.kind == "fact":
+            print(f"  {'✓' if e.verified else '✗'} [{e.source}] {e.statement}")
+            for issue in e.issues:
+                print(f"      ! {issue}")
+    print("\nINFERENCES:")
+    for e in r.evidence:
+        if e.kind == "inference":
+            print(f"  - {e.statement}")
+    for issue in v.root_cause_issues:
+        print(f"  ! root cause: {issue}")
+    for issue in v.statement_issues:
+        print(f"  ! {issue}")
+    print("\nRecommended actions:")
+    for action in r.recommended_actions:
+        print(f"  - {action}")
+    print(f"\nRollback:   {'yes' if r.rollback_recommended else 'no'}. {r.rollback_reason}")
+    if r.remediation:
+        print(f"Remediation: {r.remediation['proposal']['summary']} -> {r.remediation['approval_status']}"
+              + (f", {r.remediation['result']['status']}" if r.remediation.get("result") else ""))
+    print(f"Knowledge:  {', '.join(r.knowledge_sources) or '(none)'}")
 
 
 if __name__ == "__main__":

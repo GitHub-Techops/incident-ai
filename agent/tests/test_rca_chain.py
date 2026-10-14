@@ -7,10 +7,12 @@ from langchain_core.retrievers import BaseRetriever
 from pydantic import ValidationError
 
 from chains.rca import RCAError, analyze, most_telling_error, retrieval_queries, retrieve
-from schemas import RootCauseAnalysis
+from schemas import Fact, RootCauseAnalysis
 
 VALID = RootCauseAnalysis(
-    summary="Orders fail.", facts=["log: connection refused to orders-db:5433"],
+    summary="Orders fail.",
+    facts=[Fact(statement="connection refused to orders-db:5433", source="kubernetes",
+                quote='"db_host": "orders-db:5433"')],
     inferences=["v2 default port is wrong"], root_cause="DB_PORT defaults to 5433", confidence=0.85,
     recommended_actions=["roll back"], rollback_recommended=True, rollback_reason="v2 introduced it",
     knowledge_sources=["runbooks/database-errors.md"],
@@ -71,6 +73,14 @@ def test_invalid_answer_is_sent_back_with_the_error_once():
     retry = model.seen[1]
     assert retry[-2].content == '{"confidence": 5}'  # the model sees its own invalid answer
     assert "less than or equal to 1" in retry[-1].content  # and why it was rejected
+
+
+def test_correction_round_shows_the_previous_answer_and_the_problems():
+    model = ScriptedModel([ok()])
+    analyze(model, "a", "e", "k", previous=VALID, problems=["fact \"x\": 'line 18' does not appear in the evidence"])
+    *_, previous_answer, request = model.seen[0]
+    assert "orders-db:5433" in previous_answer.content  # its own earlier JSON
+    assert "'line 18' does not appear in the evidence" in request.content
 
 
 def test_gives_up_after_two_invalid_answers():

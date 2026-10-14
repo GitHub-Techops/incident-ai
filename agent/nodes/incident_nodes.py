@@ -17,6 +17,8 @@ from langgraph.types import interrupt
 
 from chains.rca import RCAError, analyze, most_telling_error, retrieval_queries, retrieve
 from nodes.rollback import assess_rollback, rollback_proposal
+from report.build import build_corpus, build_report, capped_confidence, check_analysis, problems_for_correction
+from schemas import RootCauseAnalysis
 from state.incident_state import IncidentState
 from tools.backend import BackendClient, BackendError
 from tools.evidence_format import format_alert, format_deployment, format_kubernetes, format_metrics
@@ -31,6 +33,7 @@ class Deps:
     backend: BackendClient
     retriever: BaseRetriever
     llm: BaseChatModel
+    model_name: str = "unknown"  # recorded in the report
 
 
 def make_nodes(deps: Deps) -> dict[str, Any]:
@@ -93,17 +96,48 @@ def make_nodes(deps: Deps) -> dict[str, Any]:
             parts.append("## Evidence that could not be collected\n" + "\n".join(f"- {e}" for e in state["errors"]))
         knowledge = format_documents([Document(page_content=d["content"], metadata=d)
                                       for d in state.get("rag_evidence", [])]) or "(none)"
+        alert, evidence = format_alert(state["incident"]), "\n\n".join(parts)
         start = time.perf_counter()
         try:
-            result, attempts = analyze(deps.llm, format_alert(state["incident"]), "\n\n".join(parts), knowledge)
+            result, attempts = analyze(deps.llm, alert, evidence, knowledge)
         except RCAError as exc:
             return {"stop_reason": f"analysis failed: {exc}", "trace": ["analyze: failed"]}
         return {
-            "analysis": result.model_dump(), "root_cause": result.root_cause, "confidence": result.confidence,
-            "recommended_actions": result.recommended_actions, "rollback_recommended": result.rollback_recommended,
-            "trace": [f"analyze: confidence {result.confidence:.2f}, rollback "
-                      f"{'recommended' if result.rollback_recommended else 'not recommended'} "
+            "alert_text": alert, "evidence_text": evidence, "knowledge_text": knowledge,
+            "analysis": result.model_dump(),
+            "trace": [f"analyze: {len(result.facts)} facts, confidence {result.confidence:.2f} "
                       f"({time.perf_counter() - start:.1f}s, {attempts} attempt(s))"],
+        }
+
+    def verify_claims(state: IncidentState) -> dict:
+        """Check every fact against the input; one correction round; cap confidence if needed."""
+        texts = (state["alert_text"], state["evidence_text"], state["knowledge_text"])
+        corpus = build_corpus(*texts)
+        result = RootCauseAnalysis.model_validate(state["analysis"])
+        fact_issues, root_issues, statement_issues = check_analysis(result, corpus)
+        corrected, trace = False, []
+        problems = problems_for_correction(result, fact_issues, root_issues, statement_issues)
+        if problems:
+            trace.append(f"verify_claims: {len(problems)} unsupported statement(s), asking for a correction")
+            try:
+                result, _ = analyze(deps.llm, *texts, previous=result, problems=problems)
+                fact_issues, root_issues, statement_issues = check_analysis(result, corpus)
+                corrected = True
+            except RCAError as exc:
+                trace.append(f"verify_claims: correction failed ({exc}); keeping the first answer")
+        confidence, note = capped_confidence(result.confidence, fact_issues, root_issues, statement_issues)
+        verified = sum(1 for issues in fact_issues if not issues)
+        trace.append(f"verify_claims: {verified}/{len(fact_issues)} facts verified"
+                     + (", root cause names unsupported details" if root_issues else "")
+                     + (f", {len(statement_issues)} unsupported detail(s) in summary/inferences"
+                        if statement_issues else "")
+                     + (f"; confidence {note}" if note else ""))
+        return {
+            "analysis": result.model_dump(), "fact_issues": fact_issues, "root_cause_issues": root_issues,
+            "statement_issues": statement_issues, "corrected": corrected, "confidence_note": note,
+            "root_cause": result.root_cause, "confidence": confidence,
+            "recommended_actions": result.recommended_actions, "rollback_recommended": result.rollback_recommended,
+            "trace": trace,
         }
 
     def assess_rollback_node(state: IncidentState) -> dict:
@@ -128,6 +162,8 @@ def make_nodes(deps: Deps) -> dict[str, Any]:
             "incident_id": state["incident_id"],
             "root_cause": state["root_cause"],
             "confidence": state["confidence"],
+            "confidence_note": state.get("confidence_note"),
+            "facts_verified": f"{sum(1 for i in state['fact_issues'] if not i)}/{len(state['fact_issues'])}",
             "proposal": state["remediation_proposal"],
             "question": "Approve this remediation? Answer approve or reject.",
         })
@@ -147,6 +183,12 @@ def make_nodes(deps: Deps) -> dict[str, Any]:
                                       f"-n {proposal['namespace']} --to-revision={proposal['to_revision']}"},
                 "trace": ["remediate: approved action recorded, not executed (Milestone 17)"]}
 
+    def finalize_report(state: IncidentState) -> dict:
+        report = build_report(state, deps.model_name)
+        return {"report": report.model_dump(mode="json"),
+                "trace": [f"finalize_report: status {report.status}, "
+                          f"{report.verification.facts_verified}/{report.verification.facts_total} facts verified"]}
+
     return {
         "receive_alert": receive_alert,
         "collect_kubernetes": collect_kubernetes,
@@ -154,8 +196,10 @@ def make_nodes(deps: Deps) -> dict[str, Any]:
         "collect_deployment": collect_deployment,
         "search_knowledge": search_knowledge,
         "analyze": analyze_evidence,
+        "verify_claims": verify_claims,
         "assess_rollback": assess_rollback_node,
         "propose_remediation": propose_remediation,
         "human_approval": human_approval,
         "remediate": remediate,
+        "finalize_report": finalize_report,
     }

@@ -25,3 +25,6 @@ dist/
 .DS_Store
 .vscode/
 .idea/
+
+# Incident reports written by agent/investigate.py
+agent/reports/

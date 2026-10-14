@@ -28,7 +28,20 @@ Confidence is a number between 0 and 1 (not a percentage):
   evidence contradicts it; never 1.0.
 - 0.5 to 0.9 when the evidence strongly suggests the cause but a link is inferred.
 - below 0.5 when several causes remain possible.
+For every fact, copy into `quote` the exact text from the input that shows it (a log line, a fact
+line, a diff line, a metric line), character for character, and set `source` to where it is.
+Statements are checked against the input: details that do not appear in it (such as line numbers)
+are flagged.
 List in knowledge_sources the source files of the knowledge documents you relied on."""
+
+CORRECTION_PROMPT = """Your previous answer was checked against the evidence, and these statements are
+not supported by it:
+
+{problems}
+
+Return the full answer again. Correct or remove those statements: every quote must be copied exactly
+from the input, and every detail (line numbers, commits, ports, file names) must appear in it.
+Keep everything that was correct."""
 
 RCA_PROMPT = ChatPromptTemplate.from_messages([
     ("system", SYSTEM_PROMPT),
