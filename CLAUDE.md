@@ -656,14 +656,15 @@ Documents
 Parsing
    |
    v
-Chunking
+Embeddings (whole documents, no chunking for now)
    |
    v
-Embeddings
-   |
-   v
-Chroma
+Redis
 ```
+
+Decision (2026-10-14, by the user): no chunking for now. Each document is
+embedded whole with Ollama `nomic-embed-text` (8192-token context). The
+chunking code in `rag/ingestion/chunking.py` stays available but unused.
 
 Use local embeddings.
 
@@ -671,9 +672,14 @@ No OpenAI/Azure embedding API.
 
 ------------------------------------------------------------------------
 
-# 17. Milestone 12 --- Chroma
+# 17. Milestone 12 --- Redis vector search
 
-Use Chroma as the local vector database.
+Decision (2026-10-14, by the user): use Redis 8 (built-in Query Engine with
+vector search) instead of Chroma. Wherever this document says Chroma, read
+Redis. Redis runs as a Docker container in WSL (`rag/compose.yaml`), bound to
+localhost, with its data in a Docker volume.
+
+Use Redis as the local vector database.
 
 Persist its data to disk.
 
@@ -682,7 +688,7 @@ The application should be able to:
 ``` text
 add documents
 search documents
-retrieve top-k chunks
+retrieve top-k documents
 ```
 
 The RAG retriever should return:
@@ -690,7 +696,6 @@ The RAG retriever should return:
 ``` text
 document
 source
-chunk
 similarity/relevance information
 metadata
 ```

@@ -1,0 +1,23 @@
+# Redis 8 for the knowledge base vectors (Milestone 12).
+# Redis 8 includes the Query Engine (FT.CREATE / FT.SEARCH with vector search).
+#
+#   docker compose -f rag/compose.yaml up -d
+#   docker compose -f rag/compose.yaml exec redis redis-cli FT._LIST
+services:
+  redis:
+    image: redis:8.10.2
+    container_name: incident-ai-redis
+    # Localhost only: nothing outside this machine can connect.
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data  # snapshots survive container restarts
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  redis-data:
